@@ -10,11 +10,6 @@ import warnings
 from .stage import Stage
 from .worker_exception import WorkerException
 from .pipeline_tqdm import PipelineTQDM
-# Default to spawn context
-DEFAULT_MP_CONTEXT = 'spawn'
-
-# Use spawn context globally
-mp_ctx = mp.get_context(DEFAULT_MP_CONTEXT)
 
 # Thread-local storage for worker instances
 _local = threading.local()
@@ -22,16 +17,6 @@ _local = threading.local()
 T = TypeVar('T')
 Q = TypeVar('Q')
 Z = TypeVar('Z')
-
-
-@dataclass
-class StageConfig:
-    """Configuration for a pipeline stage."""
-    worker_count: int = 1
-    queue_size: int = 100
-    use_threads: bool = False
-    # Default to spawn, but allow 'fork' or other contexts
-    mp_context: str = DEFAULT_MP_CONTEXT
 
 
 def _cleanup_worker(_: Any = None) -> None:
@@ -107,10 +92,10 @@ class Pipeline(Generic[T, Q]):
         self.stages.append(stage)
         return self
 
-    def _get_context(self, stage_idx: int, config: StageConfig) -> mp.context.BaseContext:
+    def _get_context(self, stage_idx: int, stage: Stage) -> mp.context.BaseContext:
         """Get or create multiprocessing context for a stage."""
         if stage_idx not in self._contexts:
-            self._contexts[stage_idx] = mp.get_context(config.mp_context)
+            self._contexts[stage_idx] = mp.get_context(stage.multiprocess_mode)
         return self._contexts[stage_idx]
 
     def _init_pools(self) -> None:
@@ -118,7 +103,7 @@ class Pipeline(Generic[T, Q]):
         self._pools = []
         try:
             for idx, stage in enumerate(self.stages):
-                if stage.use_threads:
+                if stage.mode == 'thread':
                     pool = ThreadPool(
                         processes=stage.worker_count,
                         initializer=_init_worker,
@@ -195,7 +180,6 @@ class Pipeline(Generic[T, Q]):
 
         except Exception:
             self._running = False
-
             raise
         finally:
             self._running = False

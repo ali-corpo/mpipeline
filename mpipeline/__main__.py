@@ -13,35 +13,38 @@ def main():
     print("Pipeline Example")
     print("-" * 50)
 
-    print("\nDemonstrating unordered results...")
-    # Show unordered results for better performance
+    print("\nDemonstrating unordered results with thread mode...")
+    # Show unordered results for better performance using threads
     pipeline = Pipeline(
-        Stage(NumberGenerator, worker_count=4)
+        Stage(NumberGenerator, worker_count=4, mode='thread')
     ).then(
-        Stage(SlowProcessor, worker_count=2)
+        Stage(SlowProcessor, worker_count=2, mode='thread')
     )
 
     results = list(pipeline.run(range(50), ordered_result=False, show_progress=True, show_stage_progress=True))
     print("Unordered results:", results)
 
-    print("\nDemonstrating Ordered results...")
-    # Show unordered results for better performance
+    print("\nDemonstrating Ordered results with process mode...")
+    # Show ordered results using processes with spawn
     pipeline = Pipeline(
-        Stage(NumberGenerator, worker_count=4)
+        Stage(NumberGenerator, worker_count=4, mode='process', multiprocess_mode='spawn')
     ).then(
-        Stage(SlowProcessor, worker_count=2)
+        Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn')
     )
 
     results = list(pipeline.run(range(50), ordered_result=True, show_progress=True, show_stage_progress=True))
     print("Ordered results:", results)
 
-    # Create pipeline with multiple stages
+    # Create pipeline with multiple stages using mixed modes
     pipeline = Pipeline(
-        Stage(NumberGenerator, worker_count=4, worker_kwargs={'name': 'Generator'})
+        Stage(NumberGenerator, worker_count=4, mode='thread',
+              worker_kwargs={'name': 'Generator'})
     ).then(
-        Stage(SlowProcessor, worker_count=2, worker_kwargs={'name': 'Processor'})
+        Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn',
+              worker_kwargs={'name': 'Processor'})
     ).then(
-        Stage(ErrorProneWorker, worker_count=2, worker_kwargs={'name': 'Validator'})
+        Stage(ErrorProneWorker, worker_count=2, mode='thread',
+              worker_kwargs={'name': 'Validator'})
     )
 
     # Process some numbers
@@ -67,9 +70,9 @@ def main():
     # Try processing numbers that will cause errors
     try:
         pipeline = Pipeline(
-            Stage(NumberGenerator, worker_count=2)
+            Stage(NumberGenerator, worker_count=2, mode='thread')
         ).then(
-            Stage(ErrorProneWorker, worker_count=2)
+            Stage(ErrorProneWorker, worker_count=2, mode='thread')
         )
 
         results = list(pipeline.run(range(15)))
