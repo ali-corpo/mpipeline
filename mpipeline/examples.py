@@ -29,6 +29,8 @@ class NumberGenerator(Worker[int, int]):
     def doTask(self, inp: int) -> int:
         time.sleep(0.1+random.random()/10)  # Simulate work
         return inp * 2
+    def doDispose(self):
+        print('Dispose NumberGenerator worker')
 
 
 class SlowProcessor(Worker[int, float]):

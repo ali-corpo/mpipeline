@@ -72,7 +72,7 @@ def main():
         pipeline = Pipeline(
             Stage(NumberGenerator, worker_count=2, mode='thread')
         ).then(
-            Stage(ErrorProneWorker, worker_count=2, mode='thread')
+            Stage(ErrorProneWorker, worker_count=2, mode='process')
         )
 
         results = list(pipeline.run(range(15)))

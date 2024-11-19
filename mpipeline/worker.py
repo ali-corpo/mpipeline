@@ -11,22 +11,18 @@ class Worker(abc.ABC, Generic[T, Q]):
     """Abstract base class for pipeline workers."""
 
     def __init__(self, name: str = ""):
+        """Initialize the worker. Called once per thread/process before processing starts."""
         self.name = name or self.__class__.__name__
 
     def __local_init__(self):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        if any(asyncio.iscoroutinefunction(func) for func in [self.doInit, self.doTask, self.doDispose]):
+        if any(asyncio.iscoroutinefunction(func) for func in [self.doTask, self.doDispose]):
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
-        self.__exec__(self.doInit)
 
     @abc.abstractmethod
     def doTask(self, inp: T) -> Q:
         """Process a single input and return the result."""
-        pass
-
-    def doInit(self) -> None:
-        """Initialize the worker. Called once before processing starts."""
         pass
 
     def doDispose(self) -> None:

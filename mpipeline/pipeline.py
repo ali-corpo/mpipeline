@@ -19,6 +19,8 @@ Q = TypeVar('Q')
 Z = TypeVar('Z')
 
 
+
+
 def _cleanup_worker(_: Any = None) -> None:
     """Clean up worker resources when pool shuts down."""
     if hasattr(_local, 'worker'):
@@ -46,7 +48,7 @@ def _process_item(args: Tuple[int, T]) -> Tuple[int, Any, float] | WorkerExcepti
         process_time = perf_counter() - start_time
         return seq_num, result, process_time
     except BaseException as e:
-        return WorkerException(e, _local.worker.__class__.__name__, inp)
+        raise WorkerException(e, _local.worker.__class__.__name__, inp)
 
 
 class Pipeline(Generic[T, Q]):
@@ -177,7 +179,6 @@ class Pipeline(Generic[T, Q]):
                 else:
                     # Intermediate stage - prepare data for next stage
                     current_data = self._process_stage(stage_idx, results_iter)
-
         except Exception:
             self._running = False
             raise
