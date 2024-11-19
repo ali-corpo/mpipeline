@@ -21,7 +21,7 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='thread')
     )
 
-    results = list(pipeline.run(range(50), ordered_result=False, show_progress=True, show_stage_progress=True))
+    results = list(pipeline.run(range(50), ordered_result=False, progress='stage'))
     print("Unordered results:", results)
 
     print("\nDemonstrating Ordered results with process mode...")
@@ -32,7 +32,7 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn')
     )
 
-    results = list(pipeline.run(range(50), ordered_result=True, show_progress=True, show_stage_progress=True))
+    results = list(pipeline.run(range(50), ordered_result=True, progress='stage'))
     print("Ordered results:", results)
 
     # Create pipeline with multiple stages using mixed modes
@@ -56,8 +56,7 @@ def main():
         results = list(pipeline.run(
             inputs,
             ordered_result=True,
-            show_progress=True,
-            show_stage_progress=True
+            progress='stage'
         ))
         print("\nResults:")
         for result in results:

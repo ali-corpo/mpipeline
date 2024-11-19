@@ -1,7 +1,7 @@
 from __future__ import annotations
 import multiprocessing as mp
 from dataclasses import dataclass
-from typing import Generic, TypeVar, Iterator, List, Any, Tuple, Iterable
+from typing import Generic, TypeVar, Iterator, List, Any, Tuple, Iterable, Literal
 import threading
 from multiprocessing.pool import ThreadPool
 import asyncio
@@ -18,7 +18,7 @@ T = TypeVar('T')
 Q = TypeVar('Q')
 Z = TypeVar('Z')
 
-
+ProgressType = Literal['total', 'stage', None]
 
 
 def _cleanup_worker(_: Any = None) -> None:
@@ -143,7 +143,8 @@ class Pipeline(Generic[T, Q]):
             if not self._running:
                 break
             seq_num, data, proc_time = item
-            self._progress.update_stage_progress(stage_idx, proc_time)
+            if self._progress:
+                self._progress.update_stage_progress(stage_idx, proc_time)
 
             if is_final:
                 yield data
@@ -151,13 +152,24 @@ class Pipeline(Generic[T, Q]):
                 yield seq_num, data
 
     def run(self, inputs: Iterable[T], ordered_result: bool = True,
-            show_progress: bool = False, show_stage_progress: bool = False) -> Iterator[Any]:
-        """Run the pipeline on the inputs."""
+            progress: ProgressType = None) -> Iterator[Any]:
+        """Run the pipeline on the inputs.
+        
+        Args:
+            inputs: Input data to process
+            ordered_result: If True, maintain input order in output
+            progress: Progress tracking mode:
+                     - 'total': Show overall progress
+                     - 'stage': Show per-stage progress
+                     - None: No progress tracking
+        """
         if not self.stages:
             raise ValueError("Pipeline has no stages")
 
         self._running = True
         total = len(inputs) if hasattr(inputs, '__len__') else None
+        show_progress = progress !=None
+        show_stage_progress = progress == 'stage'
         self._progress = PipelineTQDM(self.stages, show_progress, show_stage_progress, total=total)
 
         try:

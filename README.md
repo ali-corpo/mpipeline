@@ -5,7 +5,7 @@ A powerful and flexible Python pipeline framework for parallel processing with p
 ## Features
 
 - **Parallel Processing**: Support for both multi-threading and multi-processing
-- **Progress Tracking**: Built-in progress bars using tqdm
+- **Progress Tracking**: Built-in progress bars using tqdm with total or per-stage tracking
 - **Flexible Worker System**: Easy-to-implement worker classes for custom processing
 - **Error Handling**: Robust error handling with detailed error propagation
 - **Ordered/Unordered Results**: Option to maintain input order or get results as they complete
@@ -40,7 +40,7 @@ pipeline = Pipeline(
 results = list(pipeline.run(
     range(100),
     ordered_result=True,
-    show_progress=True
+    progress='total'  # Show overall progress
 ))
 ```
 
@@ -72,16 +72,14 @@ pipeline = Pipeline(
          worker_kwargs={'name': 'Processor'})
 )
 
-# Run pipeline with all features enabled
+# Run pipeline with stage-level progress tracking
 results = pipeline.run(
     range(50),
     ordered_result=True,
-    show_progress=True,
-    show_stage_progress=True
+    progress='stage'  # Show per-stage progress
 )
 ```
 ![MPipeline](img/image.png)
-
 
 
 
@@ -109,7 +107,11 @@ except Exception as e:
 
 - `Pipeline(stage: Stage[T, Q])`: Create a new pipeline with an initial stage
 - `then(stage: Stage[Q, Z])`: Add a new stage to the pipeline
-- `run(inputs, ordered_result=True, show_progress=False, show_stage_progress=False)`: Run the pipeline
+- `run(inputs, ordered_result=True, progress=None)`: Run the pipeline
+  - `progress`: Progress tracking mode
+    - `'total'`: Show overall progress
+    - `'stage'`: Show per-stage progress
+    - `None`: No progress tracking
 
 ### Stage
 
@@ -125,7 +127,6 @@ Configure a pipeline stage with the following parameters:
 
 Base class for implementing custom workers:
 
-- `doInit()`: Called once before processing starts
 - `doTask(inp: T) -> Q`: Process a single input item
 - `doDispose()`: Called once after processing ends
 
@@ -136,6 +137,10 @@ Base class for implementing custom workers:
 3. Set `ordered_result=False` for better performance when order doesn't matter
 4. Use `multiprocess_mode='spawn'` for better cross-platform compatibility
 5. Adjust `worker_count` based on your system's resources and task type
+6. Choose appropriate progress tracking:
+   - Use `progress='total'` for simple overall progress
+   - Use `progress='stage'` when monitoring individual stage performance
+   - Use `progress=None` for maximum performance
 
 ## Contributing
 
