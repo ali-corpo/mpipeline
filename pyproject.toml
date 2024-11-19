@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "mpipeline"
+version = "1.0.0"
+description = "hi"
+authors = ["Ali Modaresi"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+tqdm = "^4.67.0"
+tblib = "^3.0.0"
+
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
