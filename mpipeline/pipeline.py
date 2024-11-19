@@ -94,6 +94,14 @@ class Pipeline(Generic[T, Q]):
         self.stages.append(stage)
         return self
 
+    def __or__(self, stage: Stage[Q, Z]) -> 'Pipeline[T, Z]':
+        """Add a stage to the pipeline using the | operator.
+        
+        Example:
+            pipeline = Pipeline(stage1) | stage2 | stage3
+        """
+        return self.then(stage)
+
     def _get_context(self, stage_idx: int, stage: Stage) -> mp.context.BaseContext:
         """Get or create multiprocessing context for a stage."""
         if stage_idx not in self._contexts:
