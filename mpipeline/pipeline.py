@@ -13,16 +13,16 @@ from typing import Any, Generic, Iterable, Iterator, List, Literal, Tuple, TypeV
 from .pipeline_tqdm import PipelineTQDM
 from .stage import Stage
 from .worker_exception import WorkerException
-
+from .worker import Worker
+import atexit
+import sys
 # Thread-local storage for worker instances
 _local = threading.local()
-
 T = TypeVar('T')
 Q = TypeVar('Q')
 Z = TypeVar('Z')
 
 ProgressType = Literal['total', 'stage', None]
-
 
 manager=Manager()
 force_exit = manager.Value('bool',False)
@@ -31,6 +31,7 @@ FORCE_EXIT_EXCEPTION=Exception("Force exit signal received")
 
 def _cleanup_worker(_: Any = None) -> None:
     """Clean up worker resources when pool shuts down."""
+    # print("cleaning up ", threading.current_thread().name)
     if hasattr(_local, 'worker'):
         _local.worker.__dispose__()
 
@@ -41,24 +42,28 @@ def _init_worker(stage: Stage[T, Q], stage_idx: int) -> None:
         _local.worker = stage.worker_class(*stage.worker_args, **stage.worker_kwargs)
         _local.stage_idx = stage_idx  # Store stage index for error reporting
         _local.worker.__local_init__()
-        import atexit
-        atexit.register(_cleanup_worker)
+        atexit.register(_local.worker.__dispose__)
     except BaseException as e:
         raise WorkerException(e, stage.worker_class.__name__, None)
 
 
 def _process_item(args: Tuple[int, T]) -> Tuple[int, Any, float] | WorkerException:
     """Process a single item using the thread-local worker."""
-    if force_exit.value:
-        raise WorkerException(FORCE_EXIT_EXCEPTION, _local.worker.__class__.__name__, None)
     seq_num, inp = args
+    start_time = perf_counter()
     try:
-        start_time = perf_counter()
+        if force_exit.value:
+            raise FORCE_EXIT_EXCEPTION
         result = _local.worker.__process__(inp)
         process_time = perf_counter() - start_time
         return seq_num, result, process_time
     except BaseException as e:
-        raise WorkerException(e, _local.worker.__class__.__name__, inp)
+        force_exit.value=True
+        _cleanup_worker()
+        if isinstance(e, KeyboardInterrupt):
+            raise FORCE_EXIT_EXCEPTION
+        process_time = perf_counter() - start_time
+        return seq_num,WorkerException(e, _local.worker.__class__.__name__, inp),process_time
 
 
 class Pipeline(Generic[T, Q]):
@@ -69,35 +74,27 @@ class Pipeline(Generic[T, Q]):
         self.stages: List[Stage[Any, Any]] = [stage]
         self._contexts = {}
         self._pools = []
-        self._running = False
         self._progress = None
 
+    def _terminate_pools(self):
+        for pool in self._pools:
+            if pool and hasattr(pool, '_pool'):
+                pool.close()  
+                pool.terminate()  
+                pool.join()
+        self._pools = []
+        
     def _stop_pools(self) -> None:
         """Stop all worker pools."""
         for pool in self._pools:
-            if pool:
+            if pool:                
                 try:
-                    # Ensure workers are disposed before termination
-                    if hasattr(pool, '_pool'):
-                        try:
-                            pool.map(_cleanup_worker, [None] * pool._processes)
-                        except (KeyboardInterrupt, Exception) as e:
-                            # During interrupt, just terminate the pool
-                            pass
-                    pool.terminate()  # Terminate worker processes
-                    pool.close()  # Stop accepting new tasks
-                    # Wait for processes to exit with short timeout
-                    pool.join()
+                    pool.map(_cleanup_worker,range(pool._processes),)
+                    pool.close()  
+                    pool.join()  
                 except BaseException as e:
-                    warnings.warn(f"Error during pool cleanup: {e}")
-                finally:
-                    # Ensure pool is terminated even if join fails
-                    if hasattr(pool, 'terminate'):
-                        try:
-                            pool.terminate()
-                        except:
-                            pass
-        self._pools = []
+                    warnings.warn(f"Error during pool stop: {e}")
+        
 
     def then(self, stage: Stage[Q, Z]) -> 'Pipeline[T, Z]':
         """Add a stage to the pipeline."""
@@ -113,13 +110,11 @@ class Pipeline(Generic[T, Q]):
         return self.then(stage)
 
     def _get_context(self, stage_idx: int, stage: Stage) -> mp.context.BaseContext:
-        """Get or create multiprocessing context for a stage."""
         if stage_idx not in self._contexts:
             self._contexts[stage_idx] = mp.get_context(stage.multiprocess_mode)
         return self._contexts[stage_idx]
 
     def _init_pools(self) -> None:
-        """Initialize worker pools for each stage."""
         self._pools = []
         try:
             for idx, stage in enumerate(self.stages):
@@ -130,7 +125,6 @@ class Pipeline(Generic[T, Q]):
                         initargs=(stage, idx)
                     )
                 else:
-                    # Get context for this stage
                     ctx = self._get_context(idx, stage)
                     pool = ctx.Pool(
                         processes=stage.worker_count,
@@ -139,34 +133,17 @@ class Pipeline(Generic[T, Q]):
                     )
                 self._pools.append(pool)
         except Exception as e:
-            self._stop_pools()  # Clean up any created pools
             raise e
 
-    def _process_stage(self, stage_idx: int, iterator, is_final: bool = False) -> Iterator[Any]:
-        """Process items through a stage and update progress.
-
-        Args:
-            stage_idx: Index of the current stage
-            iterator: Iterator over stage items
-            is_final: If True, yields only the result instead of (seq_num, data)
-        """
+    def _process_stage(self, stage_idx: int, iterator) -> Iterator[Any]:
         for item in iterator:
-            if isinstance(item, WorkerException):
-                # Re-raise worker exceptions
-                self._running = False
-                item.re_raise()
-            if isinstance(item, BaseException):
-                raise item
-            if not self._running:
-                break
+            if force_exit.value:
+                continue
             seq_num, data, proc_time = item
             if self._progress:
                 self._progress.update_stage_progress(stage_idx, proc_time)
 
-            if is_final:
-                yield data
-            else:
-                yield seq_num, data
+            yield seq_num, data
 
     def run(self, inputs: Iterable[T], ordered_result: bool = True,
             progress: ProgressType = None) -> Iterator[Any]:
@@ -182,43 +159,37 @@ class Pipeline(Generic[T, Q]):
         """
         if not self.stages:
             raise ValueError("Pipeline has no stages")
-
-        self._running = True
+        force_exit.value=False
         total = len(inputs) if hasattr(inputs, '__len__') else None
         
-        self._progress = PipelineTQDM(self.stages, show_progress=progress !=None, show_stage_progress=progress == 'stage', total=total)
+        self._progress = PipelineTQDM(self.stages, progress, total=total)
 
         try:
             self._init_pools()
             current_data = enumerate(inputs)
-
-            # Initialize all stages first
+            exception=None
             for stage_idx, (stage, pool) in enumerate(zip(self.stages, self._pools)):
-                if not self._running:
-                    break
-
-                # Process current stage
                 results_iter = pool.imap(_process_item, current_data) if ordered_result else \
                     pool.imap_unordered(_process_item, current_data)
 
                 if stage_idx == len(self.stages) - 1:
-                    # Last stage - yield results directly
-                    yield from self._process_stage(stage_idx, results_iter, is_final=True)
+                    for seg_idx,res in self._process_stage(stage_idx, results_iter):
+                        if exception is not None:
+                            continue
+                        if isinstance(res,BaseException):
+                            exception=res
+                        else:    
+                            yield res
                 else:
-                    # Intermediate stage - prepare data for next stage
                     current_data = self._process_stage(stage_idx, results_iter)
-        except WorkerException as e:
-            self._running = False
+            if exception is not None:            
+                raise exception
+        except BaseException as e:            
             force_exit.value=True
-            if str(e.orig_exc)!=str(FORCE_EXIT_EXCEPTION):
+            if isinstance(e,WorkerException):
                 e.re_raise()
-            
-        except BaseException:
-            self._running = False
-            force_exit.value=True
             raise
         finally:
-            self._running = False
             if self._progress:
                 self._progress.cleanup()
             self._stop_pools()

@@ -18,12 +18,16 @@ def main():
     pipeline = Pipeline(
         Stage(NumberGenerator, worker_count=4, mode='thread')
     ).then(
-        Stage(SlowProcessor, worker_count=2, mode='thread')
+        Stage(SlowProcessor, worker_count=2, mode='process')
     )
 
-    results = list(pipeline.run(range(50), ordered_result=False, progress='stage'))
-    print("Unordered results:", results)
-
+    results = list(pipeline.run(range(5), ordered_result=False, progress='stage'))
+    import sys
+    print("Unordered results:", results,file=sys.stderr)
+    
+    # import time
+    # time.sleep(100)
+    # return 
     print("\nDemonstrating Ordered results with process mode...")
     # Show ordered results using processes with spawn
     pipeline = Pipeline(
@@ -43,7 +47,7 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn',
               worker_kwargs={'name': 'Processor'})
     ).then(
-        Stage(ErrorProneWorker, worker_count=2, mode='thread',
+        Stage(ErrorProneWorker, worker_count=2, mode='process',
               worker_kwargs={'name': 'Validator'})
     )
 
@@ -56,7 +60,7 @@ def main():
         results = list(pipeline.run(
             inputs,
             ordered_result=True,
-            progress='stage'
+            progress='stage',
         ))
         print("\nResults:")
         for result in results:
@@ -64,6 +68,8 @@ def main():
 
     except Exception as e:
         print(f"\nError occurred: {e}")
+        import traceback
+        traceback.print_exc() 
 
     print("\nDemonstrating error handling...")
     # Try processing numbers that will cause errors
@@ -79,8 +85,6 @@ def main():
 
     except Exception as e:
         print(f"Caught expected error: {e}")
-        if isinstance(e, WorkerException):
-            e.re_raise()
         raise e
 
 

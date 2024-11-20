@@ -27,11 +27,10 @@ from .worker_exception import WorkerException
 class PipelineTQDM:
     """Handles progress bar functionality for the pipeline."""
 
-    def __init__(self, stages: List[Stage],
-                 show_progress: bool = False, show_stage_progress: bool = False, total: Optional[int] = None):
+    def __init__(self, stages: List[Stage],  progress, total: Optional[int] = None):
         self.stages = stages
-        self.show_progress = show_progress
-        self.show_stage_progress = show_stage_progress
+        self.show_progress = progress!=None
+        self.show_stage_progress = progress == 'stage'
         self.progress_bars: List[tqdm] = []
         self.stage_pbars: List[tqdm] = []
         self.stage_times: List[deque] = [deque(maxlen=100) for _ in stages]

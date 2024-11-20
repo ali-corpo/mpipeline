@@ -31,6 +31,7 @@ class NumberGenerator(Worker[int, int]):
         return inp * 2
     def doDispose(self):
         print('Dispose NumberGenerator worker')
+        pass
 
 
 class SlowProcessor(Worker[int, float]):
