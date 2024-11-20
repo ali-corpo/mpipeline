@@ -1,15 +1,18 @@
 from __future__ import annotations
-import multiprocessing as mp
-from dataclasses import dataclass
-from typing import Generic, TypeVar, Iterator, List, Any, Tuple, Iterable, Literal
-import threading
-from multiprocessing.pool import ThreadPool
+
 import asyncio
-from time import perf_counter
+import multiprocessing as mp
+import threading
 import warnings
+from dataclasses import dataclass
+from multiprocessing import Manager
+from multiprocessing.pool import ThreadPool
+from time import perf_counter
+from typing import Any, Generic, Iterable, Iterator, List, Literal, Tuple, TypeVar
+
+from .pipeline_tqdm import PipelineTQDM
 from .stage import Stage
 from .worker_exception import WorkerException
-from .pipeline_tqdm import PipelineTQDM
 
 # Thread-local storage for worker instances
 _local = threading.local()
@@ -20,6 +23,11 @@ Z = TypeVar('Z')
 
 ProgressType = Literal['total', 'stage', None]
 
+
+manager=Manager()
+force_exit = manager.Value('bool',False)
+
+FORCE_EXIT_EXCEPTION=Exception("Force exit signal received")
 
 def _cleanup_worker(_: Any = None) -> None:
     """Clean up worker resources when pool shuts down."""
@@ -41,6 +49,8 @@ def _init_worker(stage: Stage[T, Q], stage_idx: int) -> None:
 
 def _process_item(args: Tuple[int, T]) -> Tuple[int, Any, float] | WorkerException:
     """Process a single item using the thread-local worker."""
+    if force_exit.value:
+        raise WorkerException(FORCE_EXIT_EXCEPTION, _local.worker.__class__.__name__, None)
     seq_num, inp = args
     try:
         start_time = perf_counter()
@@ -144,7 +154,6 @@ class Pipeline(Generic[T, Q]):
             if isinstance(item, WorkerException):
                 # Re-raise worker exceptions
                 self._running = False
-                print("reraising exception")
                 item.re_raise()
             if isinstance(item, BaseException):
                 raise item
@@ -176,9 +185,8 @@ class Pipeline(Generic[T, Q]):
 
         self._running = True
         total = len(inputs) if hasattr(inputs, '__len__') else None
-        show_progress = progress !=None
-        show_stage_progress = progress == 'stage'
-        self._progress = PipelineTQDM(self.stages, show_progress, show_stage_progress, total=total)
+        
+        self._progress = PipelineTQDM(self.stages, show_progress=progress !=None, show_stage_progress=progress == 'stage', total=total)
 
         try:
             self._init_pools()
@@ -199,8 +207,15 @@ class Pipeline(Generic[T, Q]):
                 else:
                     # Intermediate stage - prepare data for next stage
                     current_data = self._process_stage(stage_idx, results_iter)
-        except Exception:
+        except WorkerException as e:
             self._running = False
+            force_exit.value=True
+            if str(e.orig_exc)!=str(FORCE_EXIT_EXCEPTION):
+                e.re_raise()
+            
+        except BaseException:
+            self._running = False
+            force_exit.value=True
             raise
         finally:
             self._running = False
