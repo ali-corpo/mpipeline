@@ -19,8 +19,8 @@ from collections import deque
 import sys
 import warnings
 
-from mpipeline.pipeline import Stage
-from mpipeline.worker import Worker
+from .stage import Stage
+from .worker import Worker
 from .worker_exception import WorkerException
 
 
@@ -37,6 +37,7 @@ class PipelineTQDM:
         self.stage_times: List[deque] = [deque(maxlen=100) for _ in stages]
         self.stage_start_times: List[Optional[float]] = [None] * len(stages)
         self.stage_processed: List[int] = [0] * len(stages)
+        self.stage_total_times: List[float] = [0.0] * len(stages)  # Track cumulative processing time
         self.total = total
         self.init_progress_bars()
 
@@ -56,11 +57,12 @@ class PipelineTQDM:
             # Create progress bars for stages
             for i, stage in enumerate(self.stages):
                 desc = f"Stage {i+1} ({stage.worker_class.__name__})"
-                bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
+                bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt}{postfix}"  # Remove default elapsed/remaining
                 stage_pbar = tqdm(total=self.total,
                                   desc=desc,
                                   position=i+1,
                                   leave=True,
+                                  postfix="",
                                   bar_format=bar_format)
                 self.stage_pbars.append(stage_pbar)
             self.progress_bars.extend(self.stage_pbars)
@@ -74,22 +76,40 @@ class PipelineTQDM:
 
         self.stage_processed[stage_idx] += 1
         self.stage_times[stage_idx].append(result_time)
-        avg_time = sum(self.stage_times[stage_idx]) / \
-            len(self.stage_times[stage_idx])
+        self.stage_total_times[stage_idx] += result_time  # Add to cumulative time
+        avg_time = sum(self.stage_times[stage_idx]) / len(self.stage_times[stage_idx])
 
         # Calculate items waiting to be processed
         if stage_idx == 0:
             waiting = self.total - self.stage_processed[0] if self.total else 0
         else:
-            waiting = self.stage_processed[stage_idx -
-                                           1] - self.stage_processed[stage_idx]
+            waiting = self.stage_processed[stage_idx - 1] - self.stage_processed[stage_idx]
+
+        # Calculate estimated remaining time based on average processing time
+        remaining = (self.total - self.stage_processed[stage_idx]) * avg_time if self.total else 0
+
+        # Calculate rate and format it appropriately
+        rate = 1 / avg_time if avg_time > 0 else 0
+        if rate >= 1:
+            rate_str = f"{rate:.2f}it/s"
+        else:
+            rate_str = f"{1/rate:.2f}s/it"
+
+        # Format elapsed and remaining times in MM:SS format
+        def format_time(seconds):
+            minutes = int(seconds) // 60
+            seconds = int(seconds) % 60
+            return f"{minutes:02d}:{seconds:02d}"
+
+        elapsed_str = format_time(self.stage_total_times[stage_idx])
+        remaining_str = format_time(remaining)
 
         # Update stage progress bar
-        self.stage_pbars[stage_idx].update(1)
-        self.stage_pbars[stage_idx].set_postfix({
-            'avg_time': f'{avg_time:.2f}s',
-            'waiting': waiting
-        }, refresh=True)
+        self.stage_pbars[stage_idx].update(1)  # Update progress first
+        self.stage_pbars[stage_idx].set_postfix_str(
+            f"{elapsed_str}<{remaining_str} {rate_str} waiting:{waiting}",
+            refresh=True
+        )
 
     def update_main_progress(self, num: int) -> None:
         """Update the main progress bar."""
