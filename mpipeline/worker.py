@@ -11,9 +11,7 @@ Q = TypeVar('Q')
 class Worker(abc.ABC, Generic[T, Q]):
     """Abstract base class for pipeline workers."""
 
-    def __init__(self, name: str = ""):
-        """Initialize the worker. Called once per thread/process before processing starts."""
-        self.name = name or self.__class__.__name__
+        
 
     def __local_init__(self):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -21,6 +19,7 @@ class Worker(abc.ABC, Generic[T, Q]):
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
         self.__is_disposed = False 
+        
 
     @abc.abstractmethod
     def doTask(self, inp: T) -> Q:
@@ -34,7 +33,7 @@ class Worker(abc.ABC, Generic[T, Q]):
     def __dispose__(self):
         """Clean up worker resources."""
         if self.__is_disposed:return
-        print("cleanup worker", self,threading.current_thread().name)
+        # print("cleanup worker", self,threading.current_thread().name)
         self.__is_disposed = True
         if self.__class__.doDispose!=Worker.doDispose:
             self.__exec__(self.doDispose)
@@ -43,7 +42,7 @@ class Worker(abc.ABC, Generic[T, Q]):
             self._loop.close()
 
     def __str__(self) -> str:
-        return self.name
+        return self.__class__.__name__
 
     def __exec__(self, func: Callable, *args, **kwargs) -> Any:
         """Execute a function, handling both sync and async cases."""
