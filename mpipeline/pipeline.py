@@ -146,8 +146,7 @@ class Pipeline(Generic[T, Q]):
 
             yield seq_num, data
 
-    def run(self, inputs: Iterable[T], ordered_result: bool = True,
-            progress: ProgressType = None) -> Iterator[tuple[DictProxy, Q]]:
+    def run(self, inputs: Iterable[T], shared_data: DictProxy | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
         """Run the pipeline on the inputs.
 
         Args:
@@ -160,8 +159,9 @@ class Pipeline(Generic[T, Q]):
         """
         if not self.stages:
             raise ValueError("Pipeline has no stages")
-        manager = Manager()
-        shared_data = manager.dict()
+        if shared_data is None:
+            manager = Manager()
+            shared_data = manager.dict()
         shared_data['_force_exit'] = False
         total = len(inputs) if hasattr(inputs, '__len__') else None
 
@@ -183,7 +183,7 @@ class Pipeline(Generic[T, Q]):
                             # exception = res
                             raise res
                         else:
-                            yield shared_data, res
+                            yield res
                 else:
                     current_data = self._process_stage(shared_data, stage_idx, results_iter)
             # if exception is not None:
