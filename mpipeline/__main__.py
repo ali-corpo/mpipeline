@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Example usage of the mpipeline library."""
-
-import time
-from typing import List, Dict
-from mpipeline import Pipeline, Worker, Stage
-from .worker_exception import WorkerException
-from .examples import NumberGenerator, SlowProcessor, ErrorProneWorker
+from .examples import ErrorProneWorker
+from .examples import NumberGenerator
+from .examples import SlowProcessor
+from mpipeline import Pipeline
+from mpipeline import Stage
 
 
 def main():
@@ -21,13 +20,13 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process')
     )
 
-    results = list(pipeline.run(range(5), ordered_result=False, progress='stage'))
+    results = [r for _, r in pipeline.run(range(5), ordered_result=False, progress='stage')]
     import sys
-    print("Unordered results:", results,file=sys.stderr)
-    
+    print("Unordered results:", results, file=sys.stderr)
+
     # import time
     # time.sleep(100)
-    # return 
+    # return
     print("\nDemonstrating Ordered results with process mode...")
     # Show ordered results using processes with spawn
     pipeline = Pipeline(
@@ -36,13 +35,13 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn')
     )
 
-    results = list(pipeline.run(range(50), ordered_result=True, progress='stage'))
+    results = [r for _, r in pipeline.run(range(50), ordered_result=True, progress='stage')]
     print("Ordered results:", results)
 
     # Create pipeline with multiple stages using mixed modes
     pipeline = Pipeline(
         Stage(NumberGenerator, worker_count=4, mode='thread',
-              worker_kwargs={'name': 'Generator'})
+              )
     ).then(
         Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn',
               worker_kwargs={'name': 'Processor'})
@@ -57,11 +56,11 @@ def main():
 
     try:
         # Run pipeline with progress tracking
-        results = list(pipeline.run(
+        results = [r for _, r in pipeline.run(
             inputs,
             ordered_result=True,
             progress='stage',
-        ))
+        )]
         print("\nResults:")
         for result in results:
             print(result)
@@ -69,7 +68,7 @@ def main():
     except Exception as e:
         print(f"\nError occurred: {e}")
         import traceback
-        traceback.print_exc() 
+        traceback.print_exc()
 
     print("\nDemonstrating error handling...")
     # Try processing numbers that will cause errors
@@ -80,7 +79,7 @@ def main():
             Stage(ErrorProneWorker, worker_count=2, mode='process')
         )
 
-        results = list(pipeline.run(range(15)))
+        results = [r for _, r in pipeline.run(range(15))]
         print("Results (should not see this):", results)
 
     except Exception as e:

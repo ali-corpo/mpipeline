@@ -1,7 +1,10 @@
 from __future__ import annotations
-import multiprocessing as mp
-from dataclasses import dataclass, field
-from typing import Generic, TypeVar, Type
+
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Generic
+from typing import Literal
+from typing import TypeVar
 
 from .worker import Worker
 
@@ -12,7 +15,7 @@ Q = TypeVar('Q')
 
 @dataclass
 class Stage(Generic[T, Q]):
-    worker_class: Type[Worker[T, Q]]
+    worker_class: type[Worker[T, Q]]
     worker_count: int = 1
     # queue_size: int = 100
     mode: Literal['thread', 'process'] = 'thread'
