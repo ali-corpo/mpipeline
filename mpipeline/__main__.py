@@ -74,7 +74,7 @@ def main():
     # Try processing numbers that will cause errors
     try:
         pipeline = Pipeline(
-            Stage(NumberGenerator, worker_count=2, mode='thread')
+            Stage(NumberGenerator, worker_count=4, mode='process')
         ).then(
             Stage(ErrorProneWorker, worker_count=2, mode='process')
         )

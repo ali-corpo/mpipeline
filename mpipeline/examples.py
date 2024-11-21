@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import threading
 import time
 from multiprocessing.managers import DictProxy
 
@@ -16,7 +17,7 @@ class NumberGenerator(Worker[int, float]):
         return inp * 2
 
     def doDispose(self):
-        print('Dispose NumberGenerator worker')
+        print('Dispose NumberGenerator worker', threading.current_thread().name)
 
 
 class SlowProcessor(Worker[float, float]):

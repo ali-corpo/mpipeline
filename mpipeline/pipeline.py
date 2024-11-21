@@ -62,8 +62,8 @@ def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, floa
     except BaseException as e:
         shared_data['_force_exit'] = True
         _cleanup_worker()
-        if isinstance(e, KeyboardInterrupt):
-            raise FORCE_EXIT_EXCEPTION
+        # if isinstance(e, KeyboardInterrupt):
+        #     raise FORCE_EXIT_EXCEPTION
         process_time = perf_counter() - start_time
         return seq_num, WorkerException(e, _local.worker.__class__.__name__, inp), process_time
 
@@ -138,8 +138,8 @@ class Pipeline(Generic[T, Q]):
 
     def _process_stage(self, shared_data: DictProxy, stage_idx: int, iterator) -> Iterator[Any]:
         for item in iterator:
-            if shared_data['_force_exit']:
-                continue
+            # if shared_data['_force_exit']:
+            #     continue
             seq_num, data, proc_time = item
             if self._progress:
                 self._progress.update_stage_progress(stage_idx, proc_time)
@@ -170,7 +170,6 @@ class Pipeline(Generic[T, Q]):
         try:
             self._init_pools()
             current_data = enumerate(inputs)
-            exception = None
             for stage_idx, (stage, pool) in enumerate(zip(self.stages, self._pools)):
                 data_with_shared_data = ((shared_data, d) for d in current_data)
                 results_iter = pool.imap(_process_item, data_with_shared_data) if ordered_result else \
@@ -178,16 +177,17 @@ class Pipeline(Generic[T, Q]):
 
                 if stage_idx == len(self.stages) - 1:
                     for seg_idx, res in self._process_stage(shared_data, stage_idx, results_iter):
-                        if exception is not None:
-                            continue
+                        # if exception is not None:
+                        #     continue
                         if isinstance(res, BaseException):
-                            exception = res
+                            # exception = res
+                            raise res
                         else:
                             yield shared_data, res
                 else:
                     current_data = self._process_stage(shared_data, stage_idx, results_iter)
-            if exception is not None:
-                raise exception
+            # if exception is not None:
+            #     raise exception
         except BaseException as e:
             shared_data['_force_exit'] = True
             if isinstance(e, WorkerException):
