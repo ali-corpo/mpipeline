@@ -40,7 +40,6 @@ def _cleanup_worker(_: Any = None) -> None:
 def _init_worker(stage: Stage[T, Q], stage_idx: int) -> None:
     """Initialize worker in the pool process/thread."""
     try:
-        print("=====", stage.worker_args, stage.worker_kwargs)
         _local.worker = stage.worker_class(*stage.worker_args, **stage.worker_kwargs)
         _local.stage_idx = stage_idx  # Store stage index for error reporting
         _local.worker.__local_init__()
