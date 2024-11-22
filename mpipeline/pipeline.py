@@ -54,6 +54,8 @@ def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, floa
     start_time = perf_counter()
 
     try:
+        if isinstance(inp, BaseException):
+            raise inp
         if shared_data['_force_exit']:
             raise FORCE_EXIT_EXCEPTION
         result = _local.worker.__process__(inp, shared_data)
@@ -179,6 +181,9 @@ class Pipeline(Generic[T, Q]):
                     for seg_idx, res in self._process_stage(shared_data, stage_idx, results_iter):
                         # if exception is not None:
                         #     continue
+                        if isinstance(res, WorkerException):
+                            if str(res.orig_exc) == str(FORCE_EXIT_EXCEPTION):
+                                continue
                         if isinstance(res, BaseException):
                             # exception = res
                             raise res

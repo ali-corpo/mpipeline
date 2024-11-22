@@ -20,7 +20,7 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process')
     )
 
-    results = [r for _, r in pipeline.run(range(5), ordered_result=False, progress='stage')]
+    results = list(pipeline.run(range(5), ordered_result=False, progress='stage'))
     import sys
     print("Unordered results:", results, file=sys.stderr)
 
@@ -35,7 +35,7 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn')
     )
 
-    results = [r for _, r in pipeline.run(range(50), ordered_result=True, progress='stage')]
+    results = list(pipeline.run(range(50), ordered_result=True, progress='stage'))
     print("Ordered results:", results)
 
     # Create pipeline with multiple stages using mixed modes
@@ -79,7 +79,7 @@ def main():
             Stage(ErrorProneWorker, worker_count=2, mode='process')
         )
 
-        results = [r for _, r in pipeline.run(range(15))]
+        results = list(pipeline.run(range(15)))
         print("Results (should not see this):", results)
 
     except Exception as e:
