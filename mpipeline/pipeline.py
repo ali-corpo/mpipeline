@@ -67,6 +67,8 @@ def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, floa
         # if isinstance(e, KeyboardInterrupt):
         #     raise FORCE_EXIT_EXCEPTION
         process_time = perf_counter() - start_time
+        if isinstance(e, WorkerException):
+            return seq_num, e, process_time
         return seq_num, WorkerException(e, _local.worker.__class__.__name__, inp), process_time
 
 
