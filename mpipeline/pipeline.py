@@ -45,7 +45,7 @@ def _init_worker(stage: Stage[T, Q], stage_idx: int) -> None:
         _local.worker.__local_init__()
         atexit.register(_local.worker.__dispose__)
     except BaseException as e:
-        raise WorkerException(e, stage.worker_class.__name__, None)
+        raise WorkerException(e, stage.worker_class.__name__, None, None)
 
 
 def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, float] | WorkerException:
@@ -69,7 +69,7 @@ def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, floa
         process_time = perf_counter() - start_time
         if isinstance(e, WorkerException):
             return seq_num, e, process_time
-        return seq_num, WorkerException(e, _local.worker.__class__.__name__, inp), process_time
+        return seq_num, WorkerException(e, _local.worker.__class__.__name__, inp, shared_data), process_time
 
 
 class Pipeline(Generic[T, Q]):
@@ -167,6 +167,7 @@ class Pipeline(Generic[T, Q]):
         if shared_data is None:
             manager = Manager()
             shared_data = manager.dict()
+
         shared_data['_force_exit'] = False
         total = len(inputs) if hasattr(inputs, '__len__') else None
 

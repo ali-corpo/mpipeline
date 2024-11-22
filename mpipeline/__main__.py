@@ -56,11 +56,11 @@ def main():
 
     try:
         # Run pipeline with progress tracking
-        results = [r for _, r in pipeline.run(
+        results = list(pipeline.run(
             inputs,
             ordered_result=True,
             progress='stage',
-        )]
+        ))
         print("\nResults:")
         for result in results:
             print(result)
