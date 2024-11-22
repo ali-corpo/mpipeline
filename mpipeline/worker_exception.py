@@ -1,4 +1,5 @@
 from multiprocessing.managers import DictProxy
+from multiprocessing.managers import ListProxy
 from typing import Any
 from typing import Generic
 from typing import TypeVar
@@ -12,9 +13,9 @@ T = TypeVar('T')
 
 
 def to_dict_recursive(obj):
-    if isinstance(obj, dict):
+    if isinstance(obj, dict) or isinstance(obj, DictProxy):
         return {k: to_dict_recursive(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
+    elif isinstance(obj, list) or isinstance(obj, ListProxy):
         return [to_dict_recursive(v) for v in obj]
     else:
         return obj
