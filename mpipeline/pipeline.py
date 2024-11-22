@@ -145,7 +145,8 @@ class Pipeline(Generic[T, Q]):
             seq_num, data, proc_time = item
             if self._progress:
                 self._progress.update_stage_progress(stage_idx, proc_time)
-
+                if shared_data['_force_exit']:
+                    self._progress.set_error()
             yield seq_num, data
 
     def run(self, inputs: Iterable[T], shared_data: DictProxy | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:

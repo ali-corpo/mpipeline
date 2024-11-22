@@ -1,42 +1,25 @@
 from __future__ import annotations
-import abc
-import asyncio
-import multiprocessing as mp
-from dataclasses import dataclass
-from typing import Generic, TypeVar, Callable, Iterator, AsyncIterator, Optional, Type, List, Any, Tuple, Iterable
-from queue import Empty
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-import threading
-from multiprocessing.context import SpawnContext
-from multiprocessing.pool import ThreadPool
-import time
-import random
-import heapq
-from tqdm.auto import tqdm
-import asyncio
-from time import perf_counter
+
 from collections import deque
-import sys
-import warnings
+
+from tqdm.auto import tqdm
 
 from .stage import Stage
-from .worker import Worker
-from .worker_exception import WorkerException
 
 
 class PipelineTQDM:
     """Handles progress bar functionality for the pipeline."""
 
-    def __init__(self, stages: List[Stage],  progress, total: Optional[int] = None):
+    def __init__(self, stages: list[Stage], progress, total: int | None = None):
         self.stages = stages
-        self.show_progress = progress!=None
+        self.show_progress = progress is not None
         self.show_stage_progress = progress == 'stage'
-        self.progress_bars: List[tqdm] = []
-        self.stage_pbars: List[tqdm] = []
-        self.stage_times: List[deque] = [deque(maxlen=100) for _ in stages]
-        self.stage_start_times: List[Optional[float]] = [None] * len(stages)
-        self.stage_processed: List[int] = [0] * len(stages)
-        self.stage_total_times: List[float] = [0.0] * len(stages)  # Track cumulative processing time
+        self.progress_bars: list[tqdm] = []
+        self.stage_pbars: list[tqdm] = []
+        self.stage_times: list[deque] = [deque(maxlen=100) for _ in stages]
+        self.stage_start_times: list[float | None] = [None] * len(stages)
+        self.stage_processed: list[int] = [0] * len(stages)
+        self.stage_total_times: list[float] = [0.0] * len(stages)  # Track cumulative processing time
         self.total = total
         self.init_progress_bars()
 
@@ -55,20 +38,23 @@ class PipelineTQDM:
         if self.show_stage_progress and self.total:
             # Create progress bars for stages
             for i, stage in enumerate(self.stages):
-                desc = f"Stage {i+1} ({stage.worker_class.__name__})"
+                desc = f"Stage {i + 1} ({stage.worker_class.__name__})"
                 bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt}{postfix}"  # Remove default elapsed/remaining
                 stage_pbar = tqdm(total=self.total,
                                   desc=desc,
-                                  position=i+1,
+                                  position=i + 1,
                                   leave=True,
                                   postfix="",
                                   bar_format=bar_format)
                 self.stage_pbars.append(stage_pbar)
             self.progress_bars.extend(self.stage_pbars)
 
+    def set_error(self):
+        pass
+
     def update_stage_progress(self, stage_idx: int, result_time: float) -> None:
         """Update progress bar for a specific stage."""
-        if stage_idx == len(self.stages)-1:
+        if stage_idx == len(self.stages) - 1:
             self.update_main_progress(1)
         if not (self.show_progress and self.show_stage_progress and self.stage_pbars):
             return
@@ -92,7 +78,7 @@ class PipelineTQDM:
         if rate >= 1:
             rate_str = f"{rate:.2f}it/s"
         else:
-            rate_str = f"{1/rate:.2f}s/it"
+            rate_str = f"{1 / rate:.2f}s/it"
 
         # Format elapsed and remaining times in MM:SS format
         def format_time(seconds):
@@ -121,7 +107,7 @@ class PipelineTQDM:
             if pbar:
                 try:
                     pbar.close()
-                except:
+                except BaseException:
                     pass
         self.progress_bars = []
         self.stage_pbars = []
