@@ -30,35 +30,38 @@ ProgressType = Literal['total', 'stage', None]
 FORCE_EXIT_EXCEPTION = Exception("Force exit signal received")
 
 
-def _cleanup_worker(_: Any = None) -> None:
+def _cleanup_worker(_: Any = None, worker=None) -> None:
     """Clean up worker resources when pool shuts down."""
     # print("cleaning up ", threading.current_thread().name)
     if hasattr(_local, 'worker'):
-        _local.worker.__dispose__()
+        worker = worker or _local.worker
+
+    if worker:
+        worker.__dispose__()
 
 
 def _init_worker(stage: Stage[T, Q], stage_idx: int) -> None:
     """Initialize worker in the pool process/thread."""
     try:
         _local.worker = stage.worker_class(*stage.worker_args, **stage.worker_kwargs)
-        _local.stage_idx = stage_idx  # Store stage index for error reporting
         _local.worker.__local_init__()
         atexit.register(_local.worker.__dispose__)
+        return _local.worker
     except BaseException as e:
         raise WorkerException(e, stage.worker_class.__name__, None, None)
 
 
-def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, float] | WorkerException:
+def _process_item(args: tuple[DictProxy, tuple[int, T]], worker=None) -> tuple[int, Any, float] | WorkerException:
     """Process a single item using the thread-local worker."""
     shared_data, (seq_num, inp) = args
     start_time = perf_counter()
-
+    worker = worker or _local.worker
     try:
         if isinstance(inp, BaseException):
             raise inp
         if shared_data['_force_exit']:
             raise FORCE_EXIT_EXCEPTION
-        result = _local.worker.__process__(inp, shared_data)
+        result = worker.__process__(inp, shared_data)
         process_time = perf_counter() - start_time
         return seq_num, result, process_time
     except BaseException as e:
@@ -69,7 +72,7 @@ def _process_item(args: tuple[DictProxy, tuple[int, T]]) -> tuple[int, Any, floa
         process_time = perf_counter() - start_time
         if isinstance(e, WorkerException):
             return seq_num, e, process_time
-        return seq_num, WorkerException(e, _local.worker.__class__.__name__, inp, shared_data), process_time
+        return seq_num, WorkerException(e, worker.__class__.__name__, inp, shared_data), process_time
 
 
 class Pipeline(Generic[T, Q]):
@@ -155,39 +158,35 @@ class Pipeline(Generic[T, Q]):
         if shared_data is None:
             shared_data = {}
         shared_data['_force_exit'] = False
+
         total = len(inputs) if hasattr(inputs, '__len__') else None
+        workers = [
+            _init_worker(stage, stage_idx)
+            for stage_idx, stage in enumerate(self.stages)
+        ]
         self._progress = PipelineTQDM(self.stages, progress, total=total)
         try:
-            current_data = enumerate(inputs)
-            for stage_idx, stage in enumerate(self.stages):
-                _init_worker(stage, stage_idx)
-                data_with_shared_data = ((shared_data, d) for d in current_data)
-                results_iter = (_process_item(x) for x in data_with_shared_data)
+            for inp in enumerate(inputs):
+                data = None
+                for stage_idx, worker in enumerate(workers):
+                    seq_num, data, proc_time = _process_item((shared_data, inp), worker)
+                    self._progress.update_stage_progress(stage_idx, proc_time)
 
-                if stage_idx == len(self.stages) - 1:
-                    for seg_idx, res in self._process_stage(shared_data, stage_idx, results_iter):
-                        # if exception is not None:
-                        #     continue
-                        if isinstance(res, WorkerException):
-                            if str(res.orig_exc) == str(FORCE_EXIT_EXCEPTION):
-                                continue
-                        if isinstance(res, BaseException):
-                            # exception = res
-                            raise res
-                        else:
-                            yield res
-                else:
-                    current_data = self._process_stage(shared_data, stage_idx, results_iter)
+                    inp = seq_num, data
+                    if isinstance(data, BaseException):
+                        raise data
+                yield data
             # if exception is not None:
             #     raise exception
         except BaseException as e:
-
             if isinstance(e, WorkerException):
                 e.re_raise()
-            raise
+            raise e
         finally:
             if self._progress:
                 self._progress.cleanup()
+            for worker in workers:
+                _cleanup_worker(worker=worker)
 
     def run(self, inputs: Iterable[T], shared_data: DictProxy | None = None, ordered_result: bool = True, progress: ProgressType = None, debug: bool = False) -> Iterator[Q]:
         """Run the pipeline on the inputs.
@@ -203,7 +202,8 @@ class Pipeline(Generic[T, Q]):
         if not self.stages:
             raise ValueError("Pipeline has no stages")
         if debug:
-            return self.debug_run(inputs, shared_data, ordered_result, progress)
+            yield from self.debug_run(inputs, shared_data, ordered_result, progress)
+            return
         if shared_data is None:
             manager = Manager()
             shared_data = manager.dict()
