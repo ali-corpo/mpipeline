@@ -151,7 +151,45 @@ class Pipeline(Generic[T, Q]):
                     self._progress.set_error()
             yield seq_num, data
 
-    def run(self, inputs: Iterable[T], shared_data: DictProxy | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
+    def debug_run(self, inputs: Iterable[T], shared_data: DictProxy | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
+        if shared_data is None:
+            shared_data = {}
+        shared_data['_force_exit'] = False
+        total = len(inputs) if hasattr(inputs, '__len__') else None
+        self._progress = PipelineTQDM(self.stages, progress, total=total)
+        try:
+            current_data = enumerate(inputs)
+            for stage_idx, stage in enumerate(self.stages):
+                _init_worker(stage, stage_idx)
+                data_with_shared_data = ((shared_data, d) for d in current_data)
+                results_iter = (_process_item(x) for x in data_with_shared_data)
+
+                if stage_idx == len(self.stages) - 1:
+                    for seg_idx, res in self._process_stage(shared_data, stage_idx, results_iter):
+                        # if exception is not None:
+                        #     continue
+                        if isinstance(res, WorkerException):
+                            if str(res.orig_exc) == str(FORCE_EXIT_EXCEPTION):
+                                continue
+                        if isinstance(res, BaseException):
+                            # exception = res
+                            raise res
+                        else:
+                            yield res
+                else:
+                    current_data = self._process_stage(shared_data, stage_idx, results_iter)
+            # if exception is not None:
+            #     raise exception
+        except BaseException as e:
+
+            if isinstance(e, WorkerException):
+                e.re_raise()
+            raise
+        finally:
+            if self._progress:
+                self._progress.cleanup()
+
+    def run(self, inputs: Iterable[T], shared_data: DictProxy | None = None, ordered_result: bool = True, progress: ProgressType = None, debug: bool = False) -> Iterator[Q]:
         """Run the pipeline on the inputs.
 
         Args:
@@ -164,6 +202,8 @@ class Pipeline(Generic[T, Q]):
         """
         if not self.stages:
             raise ValueError("Pipeline has no stages")
+        if debug:
+            return self.debug_run(inputs, shared_data, ordered_result, progress)
         if shared_data is None:
             manager = Manager()
             shared_data = manager.dict()

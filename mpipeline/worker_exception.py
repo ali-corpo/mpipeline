@@ -36,7 +36,7 @@ class WorkerException(Exception, Generic[T]):
         self.stage = str(stage)
 
     def __str__(self):
-        return f"WorkerException {self.orig_exc}\n\t\tstage: {self.stage}\n\t\twork_item: {self.work_item}\n\t\tshared_data: {self.shared_data}"
+        return f"{type(self.orig_exc)} {self.orig_exc}\n\t\tstage: {self.stage}\n\t\twork_item: {self.work_item}\n\t\tshared_data: {self.shared_data}"
 
     def re_raise(self):
         raise self.with_traceback(self.tb_frame)
