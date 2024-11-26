@@ -4,7 +4,6 @@ import abc
 import asyncio
 import time
 from collections.abc import Callable
-from multiprocessing.managers import DictProxy
 from typing import Any
 from typing import Generic
 from typing import TypeVar
@@ -23,7 +22,7 @@ class Worker(abc.ABC, Generic[T, Q]):
         self.__is_disposed = False
 
     @abc.abstractmethod
-    def doTask(self, inp: T, shared_data: DictProxy, **kwargs) -> Q:
+    def doTask(self, inp: T, shared_data: dict, **kwargs) -> Q:
         """Process a single input and return the result."""
 
     def doDispose(self) -> None:
@@ -51,7 +50,7 @@ class Worker(abc.ABC, Generic[T, Q]):
             return self._loop.run_until_complete(result)
         return result
 
-    def __process__(self, inp: T, shared_data: DictProxy, **kwargs) -> Q:
+    def __process__(self, inp: T, shared_data: dict, **kwargs) -> Q:
         """Process a single input with proper async handling."""
         if self.__is_disposed:
             raise RuntimeError("Worker is disposed")

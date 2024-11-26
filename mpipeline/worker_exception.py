@@ -26,9 +26,9 @@ class WorkerException(Exception, Generic[T]):
     work_item: T | None
     tb_frame: Any
 
-    def __init__(self, orig_exc: BaseException, stage: Any, work_item: T | None, shared_data: DictProxy | None):
-        if shared_data is not None:
-            self.shared_data = to_dict_recursive(dict(shared_data))
+    def __init__(self, orig_exc: BaseException, stage: Any, work_item: T | None, shared_data: dict | None):
+
+        self.shared_data = to_dict_recursive(shared_data)
         super().__init__(orig_exc, str(stage), work_item, self.shared_data)
         self.tb_frame = orig_exc.__traceback__
         self.orig_exc = orig_exc
