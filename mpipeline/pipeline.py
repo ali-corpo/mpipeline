@@ -160,7 +160,9 @@ class Pipeline(Generic[T, Q]):
                     self._progress.set_error()
             yield seq_num, data
 
-    def debug_run(self, inputs: Iterable[T], shared_data: UltraDict | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
+    def no_thread_run(self, inputs: Iterable[T], shared_data: UltraDict | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
+        if hasattr(_local, 'shared_data'):
+            del _local.shared_data
         shared_data_dict = shared_data or UltraDict()
         shared_data_dict['_force_exit'] = False
 
@@ -193,7 +195,7 @@ class Pipeline(Generic[T, Q]):
             for worker in workers:
                 _cleanup_worker(worker=worker)
 
-    def run(self, inputs: Iterable[T], shared_data: UltraDict | None = None, ordered_result: bool = True, progress: ProgressType = None, debug: bool = False) -> Iterator[Q]:
+    def run(self, inputs: Iterable[T], shared_data: UltraDict | None = None, ordered_result: bool = True, progress: ProgressType = None, no_thread: bool = False) -> Iterator[Q]:
         """Run the pipeline on the inputs.
 
         Args:
@@ -206,8 +208,8 @@ class Pipeline(Generic[T, Q]):
         """
         if not self.stages:
             raise ValueError("Pipeline has no stages")
-        if debug:
-            yield from self.debug_run(inputs, shared_data, ordered_result, progress)
+        if not no_thread:
+            yield from self.no_thread_run(inputs, shared_data, ordered_result, progress)
             return
 
         shared_data_dict = shared_data if shared_data is not None else UltraDict(shared_lock=True, recurse=True)
