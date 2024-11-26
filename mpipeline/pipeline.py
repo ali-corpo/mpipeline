@@ -28,7 +28,9 @@ Z = TypeVar('Z')
 ProgressType = Literal['total', 'stage', None]
 
 
-FORCE_EXIT_EXCEPTION = Exception("Force exit signal received")
+class ForceExitException(Exception):
+    def __init__(self):
+        super().__init__("Force exit signal received")
 
 
 def _cleanup_worker(_: Any = None, worker=None) -> None:
@@ -64,7 +66,7 @@ def _process_item(args: tuple[int, T | Exception], worker=None) -> tuple[int, An
         if isinstance(inp, BaseException):
             raise inp
         if shared_data['_force_exit']:
-            raise FORCE_EXIT_EXCEPTION
+            raise ForceExitException()
         result = worker.__process__(inp, shared_data)
         process_time = perf_counter() - start_time
         return seq_num, result, process_time
@@ -74,7 +76,7 @@ def _process_item(args: tuple[int, T | Exception], worker=None) -> tuple[int, An
         # if isinstance(e, KeyboardInterrupt):
         #     raise FORCE_EXIT_EXCEPTION
         process_time = perf_counter() - start_time
-        if isinstance(e, WorkerException):
+        if isinstance(e, WorkerException) or isinstance(e, ForceExitException):
             return seq_num, e, process_time
         return seq_num, WorkerException(e, worker.__class__.__name__, inp, shared_data), process_time
 
@@ -227,9 +229,8 @@ class Pipeline(Generic[T, Q]):
                     for seg_idx, res in self._process_stage(shared_data_dict, stage_idx, results_iter):
                         # if exception is not None:
                         #     continue
-                        if isinstance(res, WorkerException):
-                            if str(res.orig_exc) == str(FORCE_EXIT_EXCEPTION):
-                                continue
+                        if isinstance(res.orig_exc, ForceExitException):
+                            continue
                         if isinstance(res, BaseException):
                             # exception = res
                             raise res
