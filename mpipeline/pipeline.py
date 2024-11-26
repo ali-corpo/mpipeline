@@ -28,8 +28,8 @@ Z = TypeVar('Z')
 ProgressType = Literal['total', 'stage', None]
 
 
-class ForceExitException(Exception):
-    def __init__(self):
+class ForceExitException(BaseException):
+    def __init__(self, *args, **kwargs):
         super().__init__("Force exit signal received")
 
 
@@ -229,7 +229,7 @@ class Pipeline(Generic[T, Q]):
                     for seg_idx, res in self._process_stage(shared_data_dict, stage_idx, results_iter):
                         # if exception is not None:
                         #     continue
-                        if isinstance(res.orig_exc, ForceExitException):
+                        if isinstance(res, ForceExitException):
                             continue
                         if isinstance(res, BaseException):
                             # exception = res
