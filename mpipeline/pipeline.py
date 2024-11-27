@@ -13,11 +13,10 @@ from typing import Generic
 from typing import Literal
 from typing import TypeVar
 
-from UltraDict import UltraDict
-
 from .pipeline_tqdm import PipelineTQDM
 from .stage import Stage
 from .worker_exception import WorkerException
+from mpipeline.tdict.thread_safe_dict import ThreadSafeDict
 from mpipeline.worker import Worker
 # Thread-local storage for worker instances
 _local = threading.local()
@@ -33,45 +32,47 @@ class ForceExitException(BaseException):
         super().__init__("Force exit signal received")
 
 
-def _cleanup_worker(_: Any = None, worker=None) -> None:
+def _cleanup_worker(_: Any = None, worker: Worker | None = None) -> None:
     """Clean up worker resources when pool shuts down."""
     # print("cleaning up ", threading.current_thread().name)
+
     if hasattr(_local, 'worker'):
         worker = worker or _local.worker
 
     if worker:
-        worker.__dispose__()
+        worker._dispose()
 
 
-def _init_worker(stage: Stage[T, Q], stage_idx: int, shared_data_name: str) -> Worker:
+def _init_worker(stage: Stage[T, Q], stage_idx: int, shared_data: ThreadSafeDict | None, internal_data: dict) -> Worker:
     """Initialize worker in the pool process/thread."""
     try:
         _local.worker = stage.worker_class(*stage.worker_args, **stage.worker_kwargs)
-        _local.worker.__local_init__()
-        if not hasattr(_local, 'shared_data'):
-            _local.shared_data = UltraDict(name=shared_data_name)
-        atexit.register(_local.worker.__dispose__)
+        _local.worker._init()
+        _local.shared_data = shared_data
+        _local.internal_data = internal_data
+        atexit.register(_local.worker._dispose)
         return _local.worker
     except BaseException as e:
-        raise WorkerException(e, stage.worker_class.__name__, None, None)
+        raise WorkerException(e, stage.worker_class.__name__, None, shared_data)
 
 
-def _process_item(args: tuple[int, T | Exception], worker=None) -> tuple[int, Any | BaseException, float]:
+def _process_item(args: tuple[int, T | Exception], use_worker=None) -> tuple[int, Any | BaseException, float]:
     """Process a single item using the thread-local worker."""
-    shared_data = _local.shared_data
+    shared_data: ThreadSafeDict | None = _local.shared_data
+    internal_data = _local.internal_data
     seq_num, inp = args
     start_time = perf_counter()
-    worker = worker or _local.worker
+    worker: Worker = use_worker or _local.worker
     try:
         if isinstance(inp, BaseException):
             raise inp
-        if shared_data['_force_exit']:
+        if internal_data['_force_exit']:
             raise ForceExitException()
-        result = worker.__process__(inp, shared_data)
+        result = worker._process(inp, shared_data)
         process_time = perf_counter() - start_time
         return seq_num, result, process_time
     except BaseException as e:
-        shared_data['_force_exit'] = True
+        internal_data['_force_exit'] = True
         _cleanup_worker()
         # if isinstance(e, KeyboardInterrupt):
         #     raise FORCE_EXIT_EXCEPTION
@@ -113,7 +114,7 @@ class Pipeline(Generic[T, Q]):
     def then(self, stage: Stage[Q, Z]) -> Pipeline[T, Z]:
         """Add a stage to the pipeline."""
         self.stages.append(stage)
-        return self
+        return self  # type: ignore
 
     def __or__(self, stage: Stage[Q, Z]) -> Pipeline[T, Z]:
         """Add a stage to the pipeline using the | operator.
@@ -128,7 +129,7 @@ class Pipeline(Generic[T, Q]):
             self._contexts[stage_idx] = mp.get_context(stage.multiprocess_mode)
         return self._contexts[stage_idx]
 
-    def _init_pools(self, shared_data: UltraDict) -> None:
+    def _init_pools(self, shared_data: ThreadSafeDict, internal_data: dict) -> None:
         self._pools = []
         try:
             for idx, stage in enumerate(self.stages):
@@ -136,42 +137,42 @@ class Pipeline(Generic[T, Q]):
                     pool = ThreadPool(
                         processes=stage.worker_count,
                         initializer=_init_worker,
-                        initargs=(stage, idx, shared_data.name)
+                        initargs=(stage, idx, shared_data, internal_data)
                     )
                 else:
                     ctx = self._get_context(idx, stage)
                     pool = ctx.Pool(
                         processes=stage.worker_count,
                         initializer=_init_worker,
-                        initargs=(stage, idx, shared_data.name)
+                        initargs=(stage, idx, None, internal_data)
                     )
                 self._pools.append(pool)
         except Exception as e:
             raise e
 
-    def _process_stage(self, shared_data: dict, stage_idx: int, iterator) -> Iterator[Any]:
+    def _process_stage(self, internal_data: dict, stage_idx: int, iterator) -> Iterator[Any]:
         for item in iterator:
             # if shared_data['_force_exit']:
             #     continue
             seq_num, data, proc_time = item
             if self._progress:
                 self._progress.update_stage_progress(stage_idx, proc_time)
-                if shared_data['_force_exit']:
+                if internal_data['_force_exit']:
                     self._progress.set_error()
             yield seq_num, data
 
-    def no_thread_run(self, inputs: Iterable[T], shared_data: UltraDict | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
-        if hasattr(_local, 'shared_data'):
-            del _local.shared_data
-        shared_data_dict = shared_data or UltraDict()
-        shared_data_dict['_force_exit'] = False
+    def no_thread_run(self, inputs: Iterable[T], shared_data: ThreadSafeDict | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
+
+        shared_data_dict = shared_data or ThreadSafeDict()
+        internal_data = {}
+        internal_data['_force_exit'] = False
 
         total = len(inputs) if hasattr(inputs, '__len__') else None
         workers = [
-            _init_worker(stage, stage_idx, shared_data_dict.name)
+            _init_worker(stage, stage_idx, shared_data_dict, internal_data)
             for stage_idx, stage in enumerate(self.stages)
         ]
-        self._progress = PipelineTQDM(self.stages, progress, total=total)
+        self._progress = PipelineTQDM(self.stages, progress, total=total, no_thread=True)
         try:
             for inp in enumerate(inputs):
                 data = None
@@ -195,7 +196,8 @@ class Pipeline(Generic[T, Q]):
             for worker in workers:
                 _cleanup_worker(worker=worker)
 
-    def run(self, inputs: Iterable[T], shared_data: UltraDict | None = None, ordered_result: bool = True, progress: ProgressType = None, no_thread: bool = False) -> Iterator[Q]:
+    def run(self, inputs: Iterable[T], shared_data: ThreadSafeDict | None = None,
+            ordered_result: bool = True, progress: ProgressType = None, no_thread: bool = False) -> Iterator[Q]:
         """Run the pipeline on the inputs.
 
         Args:
@@ -208,46 +210,47 @@ class Pipeline(Generic[T, Q]):
         """
         if not self.stages:
             raise ValueError("Pipeline has no stages")
-        if not no_thread:
+        if no_thread:
             yield from self.no_thread_run(inputs, shared_data, ordered_result, progress)
             return
 
-        shared_data_dict = shared_data if shared_data is not None else UltraDict(shared_lock=True, recurse=True)
+        shared_data_dict = shared_data if shared_data is not None else ThreadSafeDict()
+        with mp.Manager() as manager:
+            internal_data: dict = manager.dict()  # type: ignore
+            internal_data['_force_exit'] = False
+            total = len(inputs) if hasattr(inputs, '__len__') else None
 
-        shared_data_dict['_force_exit'] = False
-        total = len(inputs) if hasattr(inputs, '__len__') else None
+            self._progress = PipelineTQDM(self.stages, progress, total=total)
 
-        self._progress = PipelineTQDM(self.stages, progress, total=total)
+            try:
+                self._init_pools(shared_data_dict, internal_data)
+                current_data = enumerate(inputs)
+                for stage_idx, (stage, pool) in enumerate(zip(self.stages, self._pools)):
 
-        try:
-            self._init_pools(shared_data_dict)
-            current_data = enumerate(inputs)
-            for stage_idx, (stage, pool) in enumerate(zip(self.stages, self._pools)):
+                    results_iter = pool.imap(_process_item, current_data) if ordered_result else \
+                        pool.imap_unordered(_process_item, current_data)
 
-                results_iter = pool.imap(_process_item, current_data) if ordered_result else \
-                    pool.imap_unordered(_process_item, current_data)
-
-                if stage_idx == len(self.stages) - 1:
-                    for seg_idx, res in self._process_stage(shared_data_dict, stage_idx, results_iter):
-                        # if exception is not None:
-                        #     continue
-                        if isinstance(res, ForceExitException):
-                            continue
-                        if isinstance(res, BaseException):
-                            # exception = res
-                            raise res
-                        else:
-                            yield res
-                else:
-                    current_data = self._process_stage(shared_data_dict, stage_idx, results_iter)
-            # if exception is not None:
-            #     raise exception
-        except BaseException as e:
-            shared_data_dict['_force_exit'] = True
-            if isinstance(e, WorkerException):
-                e.re_raise()
-            raise
-        finally:
-            if self._progress:
-                self._progress.cleanup()
-            self._stop_pools()
+                    if stage_idx == len(self.stages) - 1:
+                        for seg_idx, res in self._process_stage(internal_data, stage_idx, results_iter):
+                            # if exception is not None:
+                            #     continue
+                            if isinstance(res, ForceExitException):
+                                continue
+                            if isinstance(res, BaseException):
+                                # exception = res
+                                raise res
+                            else:
+                                yield res
+                    else:
+                        current_data = self._process_stage(internal_data, stage_idx, results_iter)
+                # if exception is not None:
+                #     raise exception
+            except BaseException as e:
+                internal_data['_force_exit'] = True
+                if isinstance(e, WorkerException):
+                    e.re_raise()
+                raise
+            finally:
+                if self._progress:
+                    self._progress.cleanup()
+                self._stop_pools()

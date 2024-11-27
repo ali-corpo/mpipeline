@@ -20,7 +20,7 @@ def main():
         Stage(SlowProcessor, worker_count=2, mode='process')
     )
 
-    results = list(pipeline.no_thread_run(range(5), ordered_result=False, progress='stage'))
+    results = list(pipeline.run(range(10), ordered_result=False, progress='stage'))
     import sys
     print("Unordered results:", results, file=sys.stderr)
 

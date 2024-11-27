@@ -10,7 +10,7 @@ from .stage import Stage
 class PipelineTQDM:
     """Handles progress bar functionality for the pipeline."""
 
-    def __init__(self, stages: list[Stage], progress, total: int | None = None):
+    def __init__(self, stages: list[Stage], progress, total: int | None = None, no_thread: bool = False):
         self.stages = stages
         self.show_progress = progress is not None
         self.show_stage_progress = progress == 'stage'
@@ -21,16 +21,19 @@ class PipelineTQDM:
         self.stage_processed: list[int] = [0] * len(stages)
         self.stage_total_times: list[float] = [0.0] * len(stages)  # Track cumulative processing time
         self.total = total
+        self.no_thread = no_thread
         self.init_progress_bars()
 
     def init_progress_bars(self) -> None:
         """Initialize progress bars and related tracking variables."""
         if not self.show_progress:
             return
-
+        desc = "Total Progress"
+        if self.no_thread:
+            desc += " [NO THREAD]"
         # Create main progress bar
         main_pbar = tqdm(total=self.total,
-                         desc="Total Progress",
+                         desc=desc,
                          position=0,
                          leave=True)
         self.progress_bars.append(main_pbar)
@@ -38,7 +41,10 @@ class PipelineTQDM:
         if self.show_stage_progress and self.total:
             # Create progress bars for stages
             for i, stage in enumerate(self.stages):
-                desc = f"Stage {i + 1} ({stage.worker_class.__name__})"
+                if self.no_thread:
+                    desc = f"{i + 1}: {stage.worker_class.__name__}"
+                else:
+                    desc = f"{i + 1}: {stage.worker_class.__name__} x {stage.mode[0].upper()}{stage.worker_count}"
                 bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt}{postfix}"  # Remove default elapsed/remaining
                 stage_pbar = tqdm(total=self.total,
                                   desc=desc,
