@@ -9,8 +9,6 @@ readme = "README.md"
 python = "^3.12"
 tqdm = "^4.67.0"
 tblib = "^3.0.0"
-ultradict = "^0.0.6"
-atomics = "^1.0.2"
 
 
 
