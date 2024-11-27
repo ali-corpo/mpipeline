@@ -16,7 +16,7 @@ from typing import TypeVar
 from .pipeline_tqdm import PipelineTQDM
 from .stage import Stage
 from .worker_exception import WorkerException
-from mpipeline.tdict.thread_safe_dict import ThreadSafeDict
+from mpipeline.thread_safe_dict import ThreadSafeDict
 from mpipeline.worker import Worker
 # Thread-local storage for worker instances
 _local = threading.local()

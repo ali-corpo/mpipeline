@@ -8,7 +8,7 @@ from typing import Any
 from typing import Generic
 from typing import TypeVar
 
-from mpipeline.tdict.thread_safe_dict import ThreadSafeDict
+from mpipeline.thread_safe_dict import ThreadSafeDict
 T = TypeVar('T')
 Q = TypeVar('Q')
 
