@@ -24,7 +24,7 @@ class Worker(abc.ABC, Generic[T, Q]):
         self.__is_disposed = False
 
     @abc.abstractmethod
-    def doTask(self, inp: T, thread_mode_shared_data: ThreadSafeDict | None = None, **kwargs) -> Q:
+    def doTask(self, inp: T, thread_mode_shared_data: ThreadSafeDict | None, **kwargs) -> Q:
         """Process a single input and return the result."""
 
     def doDispose(self) -> None:
