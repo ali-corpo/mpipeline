@@ -1,9 +1,10 @@
+from collections import defaultdict
 from threading import RLock
 
 
-class ThreadSafeDict(dict):
-    def __init__(self):
-        super().__init__()
+class ThreadSafeDict(defaultdict):
+    def __init__(self, default_factory=None):
+        super().__init__(default_factory or ThreadSafeDict)
         self._lock = RLock()
 
     def __setitem__(self, key, value):
