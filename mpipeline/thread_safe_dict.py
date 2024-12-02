@@ -3,8 +3,8 @@ from threading import RLock
 
 
 class ThreadSafeDict(defaultdict):
-    def __init__(self, default_factory=None):
-        super().__init__(default_factory or ThreadSafeDict)
+    def __init__(self, default_factory=None, init_value: dict | None = None):
+        super().__init__(default_factory or ThreadSafeDict, map=ThreadSafeDict.from_dict(init_value))
         self._lock = RLock()
 
     def __setitem__(self, key, value):
@@ -39,6 +39,8 @@ class ThreadSafeDict(defaultdict):
         :param d: A regular dictionary to convert.
         :return: A ThreadSafeDict containing the same data.
         """
+        if d is None:
+            return None
         tsd = ThreadSafeDict()
         for key, value in d.items():
             tsd[key] = ThreadSafeDict.from_dict(value) if isinstance(value, dict) else value
