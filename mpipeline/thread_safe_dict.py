@@ -4,7 +4,9 @@ from threading import RLock
 
 class ThreadSafeDict(defaultdict):
     def __init__(self, default_factory=None, init_value: dict | None = None):
-        super().__init__(default_factory or ThreadSafeDict, map=ThreadSafeDict.from_dict(init_value))
+        super().__init__(default_factory or ThreadSafeDict)
+        for key, value in (init_value or {}).items():
+            self[key] = value
         self._lock = RLock()
 
     def __setitem__(self, key, value):
