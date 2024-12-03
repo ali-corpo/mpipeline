@@ -2,6 +2,7 @@
 """Example usage of the mpipeline library."""
 from .examples import ErrorProneWorker
 from .examples import NumberGenerator
+from .examples import SharedDataProcessor
 from .examples import SlowProcessor
 from mpipeline import Pipeline
 from mpipeline import Stage
@@ -18,6 +19,10 @@ def main():
         Stage(NumberGenerator, worker_count=4, mode='thread')
     ).then(
         Stage(SlowProcessor, worker_count=2, mode='process')
+    ).then(
+        Stage(SlowProcessor, worker_count=2, mode='process')
+    ).then(
+        Stage(SlowProcessor, worker_count=200, mode='process')
     )
 
     results = list(pipeline.run(range(10), ordered_result=False, progress='stage'))
@@ -33,6 +38,8 @@ def main():
         Stage(NumberGenerator, worker_count=4, mode='process', multiprocess_mode='spawn')
     ).then(
         Stage(SlowProcessor, worker_count=2, mode='process', multiprocess_mode='spawn')
+    ).then(
+        Stage(SharedDataProcessor, worker_count=2, mode='thread')
     )
 
     results = list(pipeline.run(range(50), ordered_result=True, progress='stage'))

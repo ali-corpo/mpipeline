@@ -24,7 +24,7 @@ class Worker(abc.ABC, Generic[T, Q]):
         self.__is_disposed = False
 
     @abc.abstractmethod
-    def doTask(self, inp: T, thread_mode_shared_data: ThreadSafeDict | None, **kwargs) -> Q:
+    def doTask(self, inp: T, *, thread_mode_shared_data: ThreadSafeDict, **kwargs) -> Q:
         """Process a single input and return the result."""
 
     def doDispose(self) -> None:
@@ -56,5 +56,7 @@ class Worker(abc.ABC, Generic[T, Q]):
         """Process a single input with proper async handling."""
         if self.__is_disposed:
             raise RuntimeError("Worker is disposed")
-        return self.doTask(inp, shared_data, **kwargs)
+        if shared_data is None:
+            return self.doTask(inp=inp, **kwargs)
+        return self.doTask(inp, thread_mode_shared_data=shared_data, **kwargs)
         # return self._exec(self.doTask, inp, shared_data, **kwargs)
