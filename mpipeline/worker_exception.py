@@ -5,10 +5,10 @@ from typing import Any
 from typing import Generic
 from typing import TypeVar
 
-# import tblib.pickling_support
+import tblib.pickling_support
 
 
-# tblib.pickling_support.install()
+tblib.pickling_support.install()
 
 T = TypeVar('T')
 
@@ -31,7 +31,7 @@ class WorkerException(Exception, Generic[T]):
 
         self.shared_data = to_dict_recursive(shared_data)
         super().__init__(orig_exc, str(stage), work_item, self.shared_data)
-        self.tb_frame = None  # orig_exc.__traceback__
+        self.tb_frame = orig_exc.__traceback__
         self.orig_exc = orig_exc
         try:
             pickle.dumps(work_item)
