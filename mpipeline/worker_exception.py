@@ -31,7 +31,7 @@ class WorkerException(Exception, Generic[T]):
 
         self.shared_data = to_dict_recursive(shared_data)
         super().__init__(orig_exc, str(stage), work_item, self.shared_data)
-        self.tb_frame = orig_exc.__traceback__
+        self.tb_frame = None  # orig_exc.__traceback__
         self.orig_exc = orig_exc
         try:
             pickle.dumps(work_item)
@@ -44,4 +44,6 @@ class WorkerException(Exception, Generic[T]):
         return f"{type(self.orig_exc)} {self.orig_exc}\n\t\tstage: {self.stage}\n\t\twork_item: {self.work_item}\n\t\tshared_data: {self.shared_data}"
 
     def re_raise(self):
+        if self.tb_frame is None:
+            raise self
         raise self.with_traceback(self.tb_frame)
