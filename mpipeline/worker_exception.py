@@ -1,3 +1,4 @@
+import pickle
 from multiprocessing.managers import DictProxy
 from multiprocessing.managers import ListProxy
 from typing import Any
@@ -32,7 +33,11 @@ class WorkerException(Exception, Generic[T]):
         super().__init__(orig_exc, str(stage), work_item, self.shared_data)
         self.tb_frame = orig_exc.__traceback__
         self.orig_exc = orig_exc
-        self.work_item = work_item
+        try:
+            pickle.dumps(work_item)
+            self.work_item = work_item
+        except Exception:
+            self.work_item = None
         self.stage = str(stage)
 
     def __str__(self):
