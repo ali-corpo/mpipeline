@@ -5,10 +5,10 @@ from typing import Any
 from typing import Generic
 from typing import TypeVar
 
-import tblib.pickling_support
+# import tblib.pickling_support
 
 
-tblib.pickling_support.install()
+# tblib.pickling_support.install()
 
 T = TypeVar('T')
 
