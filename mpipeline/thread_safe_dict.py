@@ -4,10 +4,23 @@ from threading import RLock
 
 class ThreadSafeDict(defaultdict):
     def __init__(self, default_factory=None, init_value: dict | None = None):
-        super().__init__(default_factory or ThreadSafeDict)
+        self.default_factory = default_factory or ThreadSafeDict
+        super().__init__(self.default_factory)
         for key, value in (init_value or {}).items():
             self[key] = value
         self._lock = RLock()
+
+    def __missing__(self, key):
+        with self._lock:  # Lock before processing the missing key
+            if key in self:
+                return self[key]
+            try:
+                value = self.default_factory(key)
+            except BaseException:
+                # Fallback to defaultdict behavior for nested ThreadSafeDict
+                value = self.default_factory()
+            self[key] = value  # Cache the value to avoid recomputing it
+        return value
 
     def __setitem__(self, key, value):
         """
@@ -30,7 +43,7 @@ class ThreadSafeDict(defaultdict):
         with self._lock:
             # Double-check locking to ensure the key is still absent after acquiring the lock.
             if key not in self:
-                self[key] = func()
+                self[key] = func(key)
 
         return self[key]
 
