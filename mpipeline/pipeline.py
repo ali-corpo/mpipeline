@@ -13,6 +13,8 @@ from typing import Generic
 from typing import Literal
 from typing import TypeVar
 
+import setproctitle
+
 from .pipeline_tqdm import PipelineTQDM
 from .stage import Stage
 from .worker_exception import WorkerException
@@ -46,10 +48,15 @@ def _cleanup_worker(_: Any = None, worker: Worker | None = None) -> None:
 def _init_worker(stage: Stage[T, Q], stage_idx: int, shared_data: ThreadSafeDict | None, internal_data: dict) -> Worker:
     """Initialize worker in the pool process/thread."""
     try:
+        setproctitle.setthreadtitle(str(stage.worker_class.__name__))
+        setproctitle.setproctitle(str(stage.worker_class.__name__))
+
         _local.worker = stage.worker_class(*stage.worker_args, **stage.worker_kwargs)
         _local.worker._init()
         _local.shared_data = shared_data
         _local.internal_data = internal_data
+        setproctitle.setthreadtitle(str(_local.worker))
+        setproctitle.setproctitle(str(_local.worker))
         atexit.register(_local.worker._dispose)
         return _local.worker
     except BaseException as e:
@@ -79,6 +86,8 @@ def _process_item(args: tuple[int, T | Exception], use_worker=None) -> tuple[int
         process_time = perf_counter() - start_time
         if isinstance(e, WorkerException) or isinstance(e, ForceExitException):
             return seq_num, e, process_time
+            # raise e
+        # raise WorkerException(e, worker.__class__.__name__, inp, shared_data)
         return seq_num, WorkerException(e, worker.__class__.__name__, inp, shared_data), process_time
 
 
@@ -147,19 +156,25 @@ class Pipeline(Generic[T, Q]):
                         initargs=(stage, idx, None, internal_data)
                     )
                 self._pools.append(pool)
-        except Exception as e:
+        except BaseException as e:
             raise e
 
     def _process_stage(self, internal_data: dict, stage_idx: int, iterator) -> Iterator[Any]:
         for item in iterator:
-            # if shared_data['_force_exit']:
-            #     continue
-            seq_num, data, proc_time = item
-            if self._progress:
-                self._progress.update_stage_progress(stage_idx, proc_time)
-                if internal_data['_force_exit']:
-                    self._progress.set_error()
-            yield seq_num, data
+            try:
+                # if shared_data['_force_exit']:
+                #     continue
+                seq_num, data, proc_time = item
+                if self._progress:
+                    self._progress.update_stage_progress(stage_idx, proc_time)
+                    if internal_data['_force_exit']:
+                        self._progress.set_error()
+
+                yield seq_num, data
+                # if isinstance(data, BaseException):
+                #     raise data
+            except BaseException as e:
+                yield -1, e
 
     def no_thread_run(self, inputs: Iterable[T], shared_data: ThreadSafeDict | None = None, ordered_result: bool = True, progress: ProgressType = None) -> Iterator[Q]:
 
